@@ -15,24 +15,64 @@ sizeCanvas();
 const player = { x: canvas.width / 2, y: canvas.height / 2, r: 20 };
 
 // Food: fixed positions, given as fractions of the screen so the same layout
-// appears on a phone and a laptop. Static — they never move.
+// appears on a phone and a laptop. They then drift and bounce (#11).
 const FOOD_LAYOUT = [
   [0.15, 0.20], [0.35, 0.14], [0.58, 0.11], [0.82, 0.22],
   [0.11, 0.50], [0.30, 0.43], [0.72, 0.45], [0.88, 0.56],
   [0.18, 0.79], [0.41, 0.86], [0.65, 0.81], [0.86, 0.88],
 ];
 const FOOD_RADIUS = 5;
+const FOOD_SPEED = 1; // pixels per frame, same for every dot
 const GROWTH = 1.1;
+
+// One direction per dot, spread around the circle so the field never looks
+// like a marching band. Speed is identical; only the heading differs.
+const FOOD_HEADINGS = [
+  0.35, 1.10, -0.55, 2.30,
+  -1.90, 0.05, 1.75, -0.95,
+  2.85, -2.40, 0.75, -0.20,
+];
 
 const food = [];
 
 function resetFood() {
   food.length = 0;
-  for (const [fx, fy] of FOOD_LAYOUT) {
-    food.push({ fx, fy, x: fx * canvas.width, y: fy * canvas.height, r: FOOD_RADIUS });
-  }
+  FOOD_LAYOUT.forEach(([fx, fy], i) => {
+    const heading = FOOD_HEADINGS[i];
+    food.push({
+      fx,
+      fy,
+      x: fx * canvas.width,
+      y: fy * canvas.height,
+      r: FOOD_RADIUS,
+      vx: Math.cos(heading) * FOOD_SPEED,
+      vy: Math.sin(heading) * FOOD_SPEED,
+    });
+  });
 }
 resetFood();
+
+// Drift in a straight line; bounce off the edges so every dot stays visible.
+function moveFood() {
+  for (const dot of food) {
+    dot.x += dot.vx;
+    dot.y += dot.vy;
+    if (dot.x < dot.r) {
+      dot.x = dot.r;
+      dot.vx = -dot.vx;
+    } else if (dot.x > canvas.width - dot.r) {
+      dot.x = canvas.width - dot.r;
+      dot.vx = -dot.vx;
+    }
+    if (dot.y < dot.r) {
+      dot.y = dot.r;
+      dot.vy = -dot.vy;
+    } else if (dot.y > canvas.height - dot.r) {
+      dot.y = canvas.height - dot.r;
+      dot.vy = -dot.vy;
+    }
+  }
+}
 
 let score = 0;
 
@@ -129,6 +169,8 @@ function update() {
       return;
     }
   }
+
+  moveFood();
 
   for (let i = food.length - 1; i >= 0; i--) {
     if (eats(food[i])) {
@@ -237,8 +279,8 @@ requestAnimationFrame(frame);
 window.addEventListener("resize", () => {
   sizeCanvas();
   for (const dot of food) {
-    dot.x = dot.fx * canvas.width;
-    dot.y = dot.fy * canvas.height;
+    dot.x = Math.min(Math.max(dot.x, dot.r), canvas.width - dot.r);
+    dot.y = Math.min(Math.max(dot.y, dot.r), canvas.height - dot.r);
   }
   clampPlayer();
 });
