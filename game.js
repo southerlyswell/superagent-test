@@ -1,6 +1,6 @@
 // Ball Munch — game logic. See GAME-BRIEF.md.
-// Ticket #5: score counter and restart on click/tap.
-// No sound, no enemies, no movement yet — those are other tickets.
+// Core loop (#3), score and restart (#5), munch sound (#6).
+// No enemies or movement yet — those are other tickets.
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -36,6 +36,40 @@ resetFood();
 
 let score = 0;
 
+// --- Sound -----------------------------------------------------------------
+// Made with the browser's audio API: no files, no library.
+// Browsers keep audio blocked until the user touches the page, so the
+// context is created on the first click/tap and stays silent before that.
+let audio = null;
+
+function ensureAudio() {
+  if (!audio) {
+    const AudioCtor = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return;
+    audio = new AudioCtor();
+  }
+  if (audio.state === "suspended") audio.resume();
+}
+
+canvas.addEventListener("pointerdown", ensureAudio);
+
+function playMunch() {
+  if (!audio || audio.state !== "running") return;
+  const now = audio.currentTime;
+  const osc = audio.createOscillator();
+  const gain = audio.createGain();
+  osc.type = "triangle";
+  osc.frequency.setValueAtTime(540, now);
+  osc.frequency.exponentialRampToValueAtTime(190, now + 0.08);
+  gain.gain.setValueAtTime(0.0001, now);
+  gain.gain.exponentialRampToValueAtTime(0.22, now + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.09);
+  osc.connect(gain);
+  gain.connect(audio.destination);
+  osc.start(now);
+  osc.stop(now + 0.11);
+}
+
 function clampPlayer() {
   player.x = Math.min(Math.max(player.x, player.r), canvas.width - player.r);
   player.y = Math.min(Math.max(player.y, player.r), canvas.height - player.r);
@@ -51,6 +85,7 @@ function update() {
       food.splice(i, 1);
       player.r *= GROWTH;
       score += 1;
+      playMunch();
       clampPlayer();
     }
   }
