@@ -1,6 +1,6 @@
 // Ball Munch — game logic. See GAME-BRIEF.md.
-// Ticket #3: player ball, static food dots, growth on eat.
-// No score, no sound, no game over yet — those are later tickets.
+// Ticket #5: score counter and restart on click/tap.
+// No sound, no enemies, no movement yet — those are other tickets.
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -24,13 +24,17 @@ const FOOD_LAYOUT = [
 const FOOD_RADIUS = 5;
 const GROWTH = 1.1;
 
-const food = FOOD_LAYOUT.map(([fx, fy]) => ({
-  fx,
-  fy,
-  x: fx * canvas.width,
-  y: fy * canvas.height,
-  r: FOOD_RADIUS,
-}));
+const food = [];
+
+function resetFood() {
+  food.length = 0;
+  for (const [fx, fy] of FOOD_LAYOUT) {
+    food.push({ fx, fy, x: fx * canvas.width, y: fy * canvas.height, r: FOOD_RADIUS });
+  }
+}
+resetFood();
+
+let score = 0;
 
 function clampPlayer() {
   player.x = Math.min(Math.max(player.x, player.r), canvas.width - player.r);
@@ -46,6 +50,7 @@ function update() {
     if (eats(food[i])) {
       food.splice(i, 1);
       player.r *= GROWTH;
+      score += 1;
       clampPlayer();
     }
   }
@@ -66,7 +71,24 @@ function draw() {
   ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
   ctx.fillStyle = "#f4f4f7";
   ctx.fill();
+
+  ctx.fillStyle = "#cfcfd6";
+  ctx.font = "16px system-ui, -apple-system, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+  ctx.fillText("Score: " + score, 16, 30);
 }
+
+// Click or tap anywhere: back to a clean game.
+function restart() {
+  score = 0;
+  player.r = 20;
+  player.x = canvas.width / 2;
+  player.y = canvas.height / 2;
+  resetFood();
+}
+
+canvas.addEventListener("pointerdown", restart);
 
 function frame() {
   update();
