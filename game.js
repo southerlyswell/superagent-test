@@ -1,7 +1,7 @@
 // Ball Munch — game logic. See GAME-BRIEF.md.
 // Core loop (#3), score and restart (#5), munch sound (#6),
 // enemies, game over and play again (#9), start screen, three lives
-// and a best score kept on the device (#13).
+// and a best score kept on the device (#13), finger steering (#15).
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -12,8 +12,15 @@ function sizeCanvas() {
 }
 sizeCanvas();
 
-// Player: radius 20, centred on the screen.
+// Player: radius 20, centred on the screen. It is steered, not placed.
 const player = { x: canvas.width / 2, y: canvas.height / 2, r: 20 };
+
+// Steering: hold a finger anywhere and the ball heads for that point at a
+// fixed speed. Same speed as the food, so food is catchable and an enemy
+// cannot simply be outrun.
+const PLAYER_SPEED = 1; // pixels per frame
+let pointing = false;
+const pointerTarget = { x: 0, y: 0 };
 
 // Food: fixed positions, given as fractions of the screen so the same layout
 // appears on a phone and a laptop. They then drift and bounce (#11).
@@ -191,9 +198,26 @@ function eats(dot) {
   return Math.hypot(player.x - dot.x, player.y - dot.y) < player.r + dot.r;
 }
 
+function steer() {
+  if (!pointing) return;
+  const dx = pointerTarget.x - player.x;
+  const dy = pointerTarget.y - player.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance > PLAYER_SPEED) {
+    player.x += (dx / distance) * PLAYER_SPEED;
+    player.y += (dy / distance) * PLAYER_SPEED;
+  } else {
+    player.x = pointerTarget.x;
+    player.y = pointerTarget.y;
+  }
+  clampPlayer();
+}
+
 function update() {
   if (phase !== "playing") return;
   if (invulnerable > 0) invulnerable -= 1;
+
+  steer();
 
   for (const enemy of enemies) {
     moveEnemy(enemy);
@@ -349,6 +373,7 @@ function resetRound() {
 
 function startGame() {
   resetRound();
+  pointing = false;
   phase = "playing";
 }
 
@@ -369,8 +394,9 @@ function loseLife() {
   }
 }
 
-// Start screen: only the Start button begins. Playing: a click or tap
-// anywhere restarts. Game over: only Play again does.
+// Start screen: only the Start button begins. Playing: pressing anywhere
+// steers the ball. Game over: only Play again does. There is no
+// tap-anywhere restart any more.
 canvas.addEventListener("pointerdown", (event) => {
   if (phase === "start") {
     if (insideButton(startButtonRect(), event)) startGame();
@@ -380,7 +406,22 @@ canvas.addEventListener("pointerdown", (event) => {
     if (insideButton(playAgainRect(), event)) startGame();
     return;
   }
-  startGame();
+  pointing = true;
+  pointerTarget.x = event.clientX;
+  pointerTarget.y = event.clientY;
+});
+
+// A held finger can move, and can be lifted or cancelled anywhere.
+window.addEventListener("pointermove", (event) => {
+  if (!pointing) return;
+  pointerTarget.x = event.clientX;
+  pointerTarget.y = event.clientY;
+});
+window.addEventListener("pointerup", () => {
+  pointing = false;
+});
+window.addEventListener("pointercancel", () => {
+  pointing = false;
 });
 
 function frame() {
