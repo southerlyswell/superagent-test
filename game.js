@@ -1,6 +1,7 @@
 // Ball Munch — game logic. See GAME-BRIEF.md.
 // Core loop (#3), score and restart (#5), munch sound (#6),
-// enemies, game over and play again (#9).
+// enemies, game over and play again (#9), start screen, three lives
+// and a best score kept on the device (#13).
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -76,6 +77,35 @@ function moveFood() {
 
 let score = 0;
 
+// --- Best score ------------------------------------------------------------
+// Kept on the device only: no accounts, no network.
+const BEST_KEY = "ballmunch.best";
+
+function loadBest() {
+  try {
+    const stored = Number(window.localStorage.getItem(BEST_KEY));
+    return Number.isFinite(stored) && stored > 0 ? stored : 0;
+  } catch (err) {
+    return 0; // storage blocked (private mode): the game still plays
+  }
+}
+
+function saveBest(value) {
+  try {
+    window.localStorage.setItem(BEST_KEY, String(value));
+  } catch (err) {
+    /* nothing to do: the score still shows for this session */
+  }
+}
+
+let best = loadBest();
+
+// --- Lives -----------------------------------------------------------------
+const START_LIVES = 3;
+const INVULNERABLE_FRAMES = 90; // about 1.5 s to get clear after a hit
+let lives = START_LIVES;
+let invulnerable = 0;
+
 // --- Enemies ---------------------------------------------------------------
 // Three larger balls drifting slowly. Touching one ends the game.
 const ENEMY_RADIUS = 40;
@@ -89,7 +119,9 @@ const ENEMY_START = [
 ];
 
 let enemies = [];
-let gameOver = false;
+
+// start screen -> playing -> over
+let phase = "start";
 
 function resetEnemies() {
   enemies = ENEMY_START.map(([fx, fy], i) => ({
@@ -160,12 +192,13 @@ function eats(dot) {
 }
 
 function update() {
-  if (gameOver) return;
+  if (phase !== "playing") return;
+  if (invulnerable > 0) invulnerable -= 1;
 
   for (const enemy of enemies) {
     moveEnemy(enemy);
-    if (touchesEnemy(enemy)) {
-      gameOver = true;
+    if (invulnerable === 0 && touchesEnemy(enemy)) {
+      loseLife();
       return;
     }
   }
@@ -177,6 +210,10 @@ function update() {
       food.splice(i, 1);
       player.r *= GROWTH;
       score += 1;
+      if (score > best) {
+        best = score;
+        saveBest(best);
+      }
       playMunch();
       clampPlayer();
     }
@@ -201,25 +238,77 @@ function draw() {
     ctx.fill();
   }
 
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
-  ctx.fillStyle = "#f4f4f7";
-  ctx.fill();
+  // Blink while invulnerable so a hit is visible.
+  const visible = invulnerable === 0 || Math.floor(invulnerable / 6) % 2 === 0;
+  if (visible) {
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
+    ctx.fillStyle = "#f4f4f7";
+    ctx.fill();
+  }
 
+  drawHud();
+
+  if (phase === "start") drawStartScreen();
+  if (phase === "over") drawGameOver();
+}
+
+function drawHud() {
   ctx.fillStyle = "#cfcfd6";
   ctx.font = "16px system-ui, -apple-system, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillText("Score: " + score, 16, 30);
+  ctx.fillStyle = "#8c8c96";
+  ctx.fillText("Best: " + best, 16, 54);
 
-  if (gameOver) drawGameOver();
+  // Lives as dots, top-right.
+  for (let i = 0; i < START_LIVES; i++) {
+    const cx = canvas.width - 24 - i * 26;
+    ctx.beginPath();
+    ctx.arc(cx, 28, 7, 0, Math.PI * 2);
+    ctx.fillStyle = i < lives ? "#7ee0c4" : "#33333c";
+    ctx.fill();
+  }
 }
 
-function playAgainRect() {
+function startButtonRect() {
   const w = 220;
   const h = 56;
   return { x: (canvas.width - w) / 2, y: canvas.height / 2 + 40, w, h };
 }
+
+function insideButton(b, event) {
+  return event.clientX >= b.x && event.clientX <= b.x + b.w &&
+         event.clientY >= b.y && event.clientY <= b.y + b.h;
+}
+
+function drawStartScreen() {
+  ctx.fillStyle = "rgba(8, 8, 12, 0.82)";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#f4f4f7";
+  ctx.font = "600 40px system-ui, -apple-system, sans-serif";
+  ctx.fillText("Ball Munch", canvas.width / 2, canvas.height / 2 - 70);
+
+  ctx.fillStyle = "#cfcfd6";
+  ctx.font = "18px system-ui, -apple-system, sans-serif";
+  ctx.fillText("Eat the small green dots. Avoid the big red ones.",
+               canvas.width / 2, canvas.height / 2 - 24);
+
+  const b = startButtonRect();
+  ctx.fillStyle = "#f4f4f7";
+  ctx.fillRect(b.x, b.y, b.w, b.h);
+  ctx.fillStyle = "#0b0b10";
+  ctx.font = "600 18px system-ui, -apple-system, sans-serif";
+  ctx.textBaseline = "middle";
+  ctx.fillText("Start", canvas.width / 2, b.y + b.h / 2);
+  ctx.textAlign = "left";
+  ctx.textBaseline = "alphabetic";
+}
+
+const playAgainRect = startButtonRect;
 
 function drawGameOver() {
   ctx.fillStyle = "rgba(8, 8, 12, 0.82)";
@@ -232,7 +321,8 @@ function drawGameOver() {
 
   ctx.fillStyle = "#cfcfd6";
   ctx.font = "20px system-ui, -apple-system, sans-serif";
-  ctx.fillText("Score: " + score, canvas.width / 2, canvas.height / 2 + 8);
+  ctx.fillText("Score: " + score + "    Best: " + best,
+               canvas.width / 2, canvas.height / 2 + 8);
 
   const b = playAgainRect();
   ctx.fillStyle = "#f4f4f7";
@@ -245,28 +335,52 @@ function drawGameOver() {
   ctx.textBaseline = "alphabetic";
 }
 
-// Back to a clean game: ball, food, score and enemies.
-function restart() {
+// A clean game: ball, food, score, lives and enemies. Best is never reset.
+function resetRound() {
   score = 0;
+  lives = START_LIVES;
+  invulnerable = 0;
   player.r = 20;
   player.x = canvas.width / 2;
   player.y = canvas.height / 2;
-  gameOver = false;
   resetFood();
   resetEnemies();
 }
 
-// While playing, a click or tap anywhere restarts. Once the game is over,
-// only the Play again button does.
+function startGame() {
+  resetRound();
+  phase = "playing";
+}
+
+// A hit costs a life. The ball shrinks back and the score stays; a short
+// spell without collisions stops the same enemy taking every life at once.
+function loseLife() {
+  lives -= 1;
+  player.r = 20;
+  player.x = canvas.width / 2;
+  player.y = canvas.height / 2;
+  invulnerable = INVULNERABLE_FRAMES;
+  if (lives <= 0) {
+    phase = "over";
+    if (score > best) {
+      best = score;
+      saveBest(best);
+    }
+  }
+}
+
+// Start screen: only the Start button begins. Playing: a click or tap
+// anywhere restarts. Game over: only Play again does.
 canvas.addEventListener("pointerdown", (event) => {
-  if (!gameOver) {
-    restart();
+  if (phase === "start") {
+    if (insideButton(startButtonRect(), event)) startGame();
     return;
   }
-  const b = playAgainRect();
-  const x = event.clientX;
-  const y = event.clientY;
-  if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) restart();
+  if (phase === "over") {
+    if (insideButton(playAgainRect(), event)) startGame();
+    return;
+  }
+  startGame();
 });
 
 function frame() {
