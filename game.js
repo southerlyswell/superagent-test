@@ -1,7 +1,8 @@
 // Ball Munch — game logic. See GAME-BRIEF.md.
 // Core loop (#3), score and restart (#5), munch sound (#6),
 // enemies, game over and play again (#9), start screen, three lives
-// and a best score kept on the device (#13), finger steering (#15).
+// and a best score kept on the device (#13), finger steering (#15),
+// arrow-key steering (#17).
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -21,6 +22,18 @@ const player = { x: canvas.width / 2, y: canvas.height / 2, r: 20 };
 const PLAYER_SPEED = 1; // pixels per frame
 let pointing = false;
 const pointerTarget = { x: 0, y: 0 };
+
+// Arrow keys (#17): hold one to move, at that same fixed speed. Holding two
+// moves diagonally at the same overall speed, not the sum. The set holds what
+// is down right now; a finger touching the screen empties it, an arrow key
+// pressed lifts the finger, so the newest input is always the one in charge.
+const ARROW_KEYS = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+};
+const heldKeys = new Set();
 
 // Food: fixed positions, given as fractions of the screen so the same layout
 // appears on a phone and a laptop. They then drift and bounce (#11).
@@ -198,7 +211,29 @@ function eats(dot) {
   return Math.hypot(player.x - dot.x, player.y - dot.y) < player.r + dot.r;
 }
 
+// One direction for all keys held; the vector is normalized so a diagonal
+// covers PLAYER_SPEED overall, and opposite keys cancel to no movement.
+function steerWithKeys() {
+  let dx = 0;
+  let dy = 0;
+  for (const key of heldKeys) {
+    const dir = ARROW_KEYS[key];
+    if (!dir) continue;
+    dx += dir[0];
+    dy += dir[1];
+  }
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return;
+  player.x += (dx / length) * PLAYER_SPEED;
+  player.y += (dy / length) * PLAYER_SPEED;
+  clampPlayer();
+}
+
 function steer() {
+  if (heldKeys.size > 0) {
+    steerWithKeys();
+    return;
+  }
   if (!pointing) return;
   const dx = pointerTarget.x - player.x;
   const dy = pointerTarget.y - player.y;
@@ -374,6 +409,7 @@ function resetRound() {
 function startGame() {
   resetRound();
   pointing = false;
+  heldKeys.clear();
   phase = "playing";
 }
 
@@ -406,6 +442,7 @@ canvas.addEventListener("pointerdown", (event) => {
     if (insideButton(playAgainRect(), event)) startGame();
     return;
   }
+  heldKeys.clear();
   pointing = true;
   pointerTarget.x = event.clientX;
   pointerTarget.y = event.clientY;
@@ -422,6 +459,25 @@ window.addEventListener("pointerup", () => {
 });
 window.addEventListener("pointercancel", () => {
   pointing = false;
+});
+
+// Arrow keys steer during play only, and always swallow the key so the page
+// never scrolls under the game. A key let go of elsewhere (alt-tab) is
+// forgotten, so the ball cannot be left coasting by a lost keyup.
+window.addEventListener("keydown", (event) => {
+  if (!ARROW_KEYS[event.key]) return;
+  event.preventDefault();
+  if (phase !== "playing") return;
+  pointing = false;
+  heldKeys.add(event.key);
+});
+window.addEventListener("keyup", (event) => {
+  if (!ARROW_KEYS[event.key]) return;
+  event.preventDefault();
+  heldKeys.delete(event.key);
+});
+window.addEventListener("blur", () => {
+  heldKeys.clear();
 });
 
 function frame() {
